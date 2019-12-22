@@ -64,8 +64,8 @@ and example usage.
     (define hover-item #f)
     (define selected-item #f)
 
-    ;; the number of scroll ticks per item
-    (define item-scroll-height (* item-height 0.7))
+    ;; the last time a click event was received
+    (define click-time 0)
 
     ;; horizontal and vertical scroll offsets
     (define h-offset 0)
@@ -151,7 +151,7 @@ and example usage.
     (define/override (on-scroll event)
       (let ([pos (send event get-position)])
         (when (eq? (send event get-direction) 'vertical)
-          (set! v-offset (* pos item-scroll-height))))
+          (set! v-offset pos)))
       (super on-scroll event)
       (send this refresh))
 
@@ -163,7 +163,7 @@ and example usage.
     ;; handle mouse events
     (define/override (on-event event)
       (case (send event get-event-type)
-        ('left-up (click))
+        ('left-down (click))
         ('right-down (r-click))
         ('motion (update-hover-item event))))
 
@@ -178,23 +178,20 @@ and example usage.
     (define/private (update-scrollbar)
       (let* ([pos (send this get-scroll-pos 'vertical)]
 
-             ; number of items to display and visible area
+             ; number of items to display and visible height
              [n (length display-items)]
              [h (send this get-height)]
 
-             ; calculate scroll height of all items and visible items
-             [n-size (+ (exact-truncate (/ (* n item-height) item-scroll-height)) 1)]
-             [page-size (+ (exact-truncate (/ h item-scroll-height)) 1)]
-
-             ; cacluate the total scroll size
-             [y (- n-size page-size)]
+             ; scroll height of all items less a single screen
+             [y (- (* n item-height) h)]
+             [page (max (- h item-height) 1)]
 
              ; is the scroll bar visible?
              [show (> y 0)])
         (send this show-scrollbars #f show)
         
         (when show
-          (send this init-manual-scrollbars #f y 1 page-size 0 0)
+          (send this init-manual-scrollbars #f y 1 page 0 0)
 
           ; keep the same scroll position if possible
           (let ([new-pos (min pos y)])
@@ -203,10 +200,13 @@ and example usage.
     
     ;; the left mouse button was clicked
     (define/private (click)
-      (if (equal? hover-item selected-item)
-          (when action-callback
-            (action-callback this (send this get-selected-item)))
-          (send this update-selection)))
+      (let ([now (current-inexact-milliseconds)])
+        (if (and (< (- now click-time) 200)
+                 (equal? hover-item selected-item))
+            (when action-callback
+              (action-callback this selected-item))
+          (send this update-selection))
+        (set! click-time now)))
 
     ;; the right mouse button was clicked
     (define/private (r-click)
@@ -214,7 +214,7 @@ and example usage.
         (send this update-selection)
         (send this refresh-now))
       (when context-action-callback
-        (context-action-callback this (send this get-selected-item))))
+        (context-action-callback this selected-item)))
 
     ;; update which story is being hovered over
     (define/private (update-hover-item event)

@@ -16,7 +16,7 @@ custom drawing of a filtered, sorted list of items.
   (new canvas-list%
        [parent frame]
        [items (range 1000)]
-       [action-callback (λ (canvas item) 
+       [action-callback (λ (canvas item)
                           (displayln item))]))
 
 (send frame show #t)
@@ -58,6 +58,14 @@ Each of the above callbacks take both the `canvas-list%` and the item itself as 
   (displayln (format "~a was selected" item)))
 ```
 
-Finally, the `paint-item-callback` function called whenever an item needs to be draw. By default, this is `#f` and indicates that the default draw function will be used, which simply draws the item as text.
+The `paint-item-callback` function called whenever an item needs to be draw. By default, this is `#f` and indicates that the default draw function will be used, which simply draws the item as text.
 
 The `paint-item-callback` is passed the `canvas-list%`, the device context (`dc<%>`), the item to be drawn, and finally a state, which is either `'selected`, `'hover`, `alt` or `#f`.
+
+Finally, there is also the `item-repr` field, which is a function that takes an item and returns the string representation of that item for rendering purposes. By default, this is defined as:
+
+```racket
+(lambda (x) (format "~a" x))
+```
+
+This is only used by the default rendering function if `paint-item-callback` isn't used, although you can obviously use it yourself as well.
