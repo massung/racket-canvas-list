@@ -149,9 +149,10 @@ and example usage.
 
     ;; when the scroll position updates, refresh
     (define/override (on-scroll event)
-      (let ([pos (send event get-position)])
+      (let ([h (send this get-scroll-range 'vertical)]
+            [pos (send event get-position)])
         (when (eq? (send event get-direction) 'vertical)
-          (set! v-offset pos)))
+          (set! v-offset (min (max pos 0) h))))
       (super on-scroll event)
       (send this refresh))
 
@@ -166,6 +167,13 @@ and example usage.
         ('left-down (click))
         ('right-down (r-click))
         ('motion (update-hover-item event))))
+
+    ;; handle key events
+    (define/override (on-char event)
+      (let ([ds (exact-truncate item-height)])
+        (case (send event get-key-code)
+          ('wheel-up (scroll-relative (- ds)))
+          ('wheel-down (scroll-relative (+ ds))))))
 
     ;; change the selected item to the one being hovered
     (define/public (update-selection #:clear [erase #f])
@@ -197,6 +205,18 @@ and example usage.
           (let ([new-pos (min pos y)])
             (send this set-scroll-pos 'vertical new-pos)
             (send this on-scroll (new scroll-event% [position new-pos]))))))
+
+    ;; move the scrollbar to an absolute position
+    (define/public (scroll-to pos)
+      (let ([h (send this get-scroll-range 'vertical)])
+        (set! v-offset (min (max pos 0) h))
+        (send this set-scroll-pos 'vertical v-offset)
+        (send this refresh-now)))
+
+    ;; move the scrollbar relative to its current position
+    (define/public (scroll-relative dpos)
+      (let ([pos (send this get-scroll-pos 'vertical)])
+        (send this scroll-to (+ pos dpos))))
     
     ;; the left mouse button was clicked
     (define/private (click)
@@ -204,7 +224,7 @@ and example usage.
         (if (and (< (- now click-time) 200)
                  (equal? hover-item selected-item))
             (when action-callback
-              (action-callback this selected-item))
+              (action-callback this (send this get-selected-item)))
           (send this update-selection))
         (set! click-time now)))
 
@@ -214,7 +234,7 @@ and example usage.
         (send this update-selection)
         (send this refresh-now))
       (when context-action-callback
-        (context-action-callback this selected-item)))
+        (context-action-callback this (send this get-selected-item))))
 
     ;; update which story is being hovered over
     (define/private (update-hover-item event)
