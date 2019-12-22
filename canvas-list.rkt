@@ -63,6 +63,9 @@ and example usage.
     (define hover-item #f)
     (define selected-item #f)
 
+    ;; the last time a click event was received
+    (define click-time 0)
+
     ;; the number of scroll ticks per item
     (define item-scroll-height (* item-height 0.7))
 
@@ -87,7 +90,7 @@ and example usage.
       (set! items (append items (for/list ([x xs]) (make-item x))))
       (update-display-items))
 
-    ;;
+    ;; create a new item with a unique id
     (define (make-item x)
       (let ([uid last-uid])
         (set! last-uid (+ last-uid 1))
@@ -179,7 +182,7 @@ and example usage.
              [n-size (+ (exact-truncate (/ (* n item-height) item-scroll-height)) 1)]
              [page-size (+ (exact-truncate (/ h item-scroll-height)) 1)]
 
-             ; cacluate the total scroll size
+             ; calculate the total scroll size
              [y (- n-size page-size)]
 
              ; is the scroll bar visible?
@@ -196,10 +199,13 @@ and example usage.
     
     ;; the left mouse button was clicked
     (define/private (click)
-      (if (equal? hover-item selected-item)
-          (when action-callback
-            (action-callback this (send this get-selected-item)))
-          (send this update-selection)))
+      (let ([now (current-inexact-milliseconds)])
+        (if (and (< (- now click-time) 200)
+                 (equal? hover-item selected-item))
+            (when action-callback
+              (action-callback this selected-item))
+          (send this update-selection))
+        (set! click-time now)))
 
     ;; the right mouse button was clicked
     (define/private (r-click)
@@ -207,7 +213,7 @@ and example usage.
         (send this update-selection)
         (send this refresh-now))
       (when context-action-callback
-        (context-action-callback this (send this get-selected-item))))
+        (context-action-callback this selected-item)))
 
     ;; update which story is being hovered over
     (define/private (update-hover-item event)

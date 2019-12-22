@@ -8,14 +8,16 @@ custom drawing of a filtered, sorted list of items.
 ```racket
 (define frame
   (new frame%
-  	   [label "List Canvas"]
+       [label "List Canvas"]
        [width 260]
        [height 400]))
 
 (define canvas
   (new canvas-list%
        [parent frame]
-       [items (range 1000)]))
+       [items (range 1000)]
+       [action-callback (λ (canvas item) 
+                          (displayln item))]))
 
 (send frame show #t)
 ```
@@ -46,7 +48,7 @@ The following background colors are available for setting. They are set to some 
 The following callbacks are available for when the user interacts with items in the list:
 
 * `selection-callback` function called whenever the selected item changes (default `#f`)
-* `action-callback` function called whenever the selected item is clicked (default `#f`)
+* `action-callback` function called whenever the selected item is double-clicked (default `#f`)
 * `context-action-callback` function called whenever the selected item is right-clicked (default `#f`)
 
 Each of the above callbacks take both the `canvas-list%` and the item itself as parameters. For example:
@@ -55,8 +57,6 @@ Each of the above callbacks take both the `canvas-list%` and the item itself as 
 (define (my-selection-callback canvas-list item)
   (displayln (format "~a was selected" item)))
 ```
-
-_Note: Racket currently cannot distinguish between single-click and double-click on a canvas control. For this reason, the first "click" of an item will select it and the second click (whenever that happens) will perform the action. If/when Racket can distinguish between single- and double-clicks, this will be updated._
 
 Finally, the `paint-item-callback` function called whenever an item needs to be draw. By default, this is `#f` and indicates that the default draw function will be used, which simply draws the item as text.
 

@@ -35,6 +35,7 @@ and example usage.
     ;; public fields
     (init-field [items null]
                 [item-height 20]
+                [item-repr (λ (x) (format "~a" x))]
 
                 ;; item colors
                 [item-color (make-color #xff #xff #xff)]
@@ -87,8 +88,8 @@ and example usage.
       (set! items (append items (for/list ([x xs]) (make-item x))))
       (update-display-items))
 
-    ;;
-    (define (make-item x)
+    ;; create a new item, giving it a unique ID
+    (define/private (make-item x)
       (let ([uid last-uid])
         (set! last-uid (+ last-uid 1))
         (cons uid x)))
@@ -128,6 +129,12 @@ and example usage.
 
     ;; return the currently selected item
     (define/public (get-selected-item) (get-item selected-item))
+
+    ;; execute a callback with the selected item
+    (define/public (apply-to-selected-item f)
+      (let ([item (get-item selected-item)])
+        (when item
+          (f item))))
 
     ;; change the sort ordering and key
     (define/public (set-sort-order ord #:key [key #f])
@@ -257,7 +264,7 @@ and example usage.
                 (let ([value (item-value item)])
                   (if paint-item-callback
                       (paint-item-callback this dc w item-height value state)
-                      (send dc draw-text (format "~a" value) 1 1))))
+                      (send dc draw-text (item-repr value) 1 1))))
 
               ; clear clipping
               (send dc set-clipping-region #f))))))
