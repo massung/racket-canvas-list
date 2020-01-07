@@ -84,6 +84,9 @@ and example usage.
 
     ;; clear the list of items
     (define/public (clear)
+      (set! hover-index #f)
+      (set! selected-index #f)
+      (set! v-offset 0)
       (set-items #()))
 
     ;; append new items to the list
