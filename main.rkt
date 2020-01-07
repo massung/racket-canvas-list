@@ -33,9 +33,8 @@ and example usage.
                [paint-callback (λ (canvas dc) (paint dc))])
 
     ;; public fields
-    (init-field [items null]
+    (init-field [items #()]
                 [item-height 20]
-                [item-repr (λ (x) (format "~a" x))]
 
                 ;; item colors
                 [item-color (make-color #xff #xff #xff)]
@@ -44,108 +43,66 @@ and example usage.
                 [hover-color (make-color #xbb #xdd #xff)]
 
                 ;; callbacks
-                [action-callback #f]
-                [context-action-callback #f]
-                [paint-item-callback #f]
                 [selection-callback #f]
-
-                ;; sorting and filtering
-                [sort-order #f]
-                [sort-key #f]
-                [filter-function #f])
-
-    ;; all the items to be displayed
-    (define display-items null)
+                [action-callback #f]
+                [context-action-callback #f])
 
     ;; the summed height of all display items
     (define display-height 0)
 
     ;; hovered-over and selected item
-    (define hover-item #f)
-    (define selected-item #f)
-
-    ;; the last time a click event was received
-    (define click-time 0)
+    (define hover-index #f)
+    (define selected-index #f)
 
     ;; horizontal and vertical scroll offsets
     (define h-offset 0)
     (define v-offset 0)
 
-    ;; a stream of unique identifiers for items
-    (define last-uid 0)
+    ;; the last time a click event was received
+    (define click-time 0)
 
-    ;; clear the list of items
-    (define/public (clear)
-      (send this set-items null))
+    ;; return the number of items in the list
+    (define/public (count-items)
+      (vector-length items))
+
+    ;; return the item at the given index
+    (define/public (get-item index)
+      (let ([n (- (vector-length items) 1)])
+        (and index (<= 0 index n) (vector-ref items index))))
+
+    ;; draw a single item in the list
+    (define/public (paint-item dc item state w h)
+      (send dc draw-text (~s item) 1 1))
 
     ;; set the list of items
     (define/public (set-items xs)
-      (set! items (for/list ([x xs]) (make-item x)))
-      (update-display-items))
+      (set! items (for/vector ([x xs]) x))
 
-    ;; append new items to the list
-    (define/public (append-items xs)
-      (set! items (append items (for/list ([x xs]) (make-item x))))
-      (update-display-items))
-
-    ;; create a new item, giving it a unique ID
-    (define/private (make-item x)
-      (let ([uid last-uid])
-        (set! last-uid (+ last-uid 1))
-        (cons uid x)))
-
-    ;; return the uid of a given item
-    (define item-uid car)
-    (define item-value cdr)
-
-    ;; update the list of visible items
-    (define/private (update-display-items)
-      (let* ([ff (or filter-function (const #t))]
-             [xs (filter (compose ff item-value) items)])
-        (set! display-items
-              (if (not sort-order)
-                  xs
-                  (sort xs sort-order
-                        #:key (compose (or sort-key identity) item-value))))
-
-        ; calculate the height of all the items
-        (set! display-height (* item-height (length display-items))))
-
-      ; update the scrollbar and refresh
+      ; update scrolling and redraw
       (update-scrollbar)
       (send this refresh))
 
-    ;; return the current list of items being displayed
-    (define/public (get-display-items)
-      (map item-value display-items))
+    ;; clear the list of items
+    (define/public (clear)
+      (set-items #()))
 
-    ;; return the value of an item with a given uid
-    (define/private (get-item uid)
-      (let ([item (findf (λ (i) (eq? (item-uid i) uid)) items)])
-        (and item (item-value item))))
+    ;; append new items to the list
+    (define/public (append-items xs)
+      (set-items (vector-append items (for/vector ([x xs]) x))))
 
     ;; return the currently hovered over item
-    (define/public (get-hover-item) (get-item hover-item))
+    (define/public (get-hover-item)
+      (get-item hover-index))
 
     ;; return the currently selected item
-    (define/public (get-selected-item) (get-item selected-item))
+    (define/public (get-selected-item)
+      (get-item selected-index))
 
     ;; execute a callback with the selected item
     (define/public (apply-to-selected-item f)
-      (let ([item (get-item selected-item)])
+      (let ([item (get-selected-item)])
         (when item
           (f item))))
-
-    ;; change the sort ordering and key
-    (define/public (set-sort-order ord #:key [key #f])
-      (set! sort-order ord)
-      (set! sort-key key)
-      (update-display-items))
-
-    ;; change the filter function
-    (define/public (set-filter-function filter)
-      (set! filter-function (or filter (const #t)))
-      (update-display-items))
 
     ;; when the scroll position updates, refresh
     (define/override (on-scroll event)
@@ -166,7 +123,7 @@ and example usage.
       (case (send event get-event-type)
         ('left-down (click))
         ('right-down (r-click))
-        ('motion (update-hover-item event))))
+        ('motion (update-hover-index event))))
 
     ;; handle key events
     (define/override (on-char event)
@@ -177,9 +134,9 @@ and example usage.
 
     ;; change the selected item to the one being hovered
     (define/public (update-selection #:clear [erase #f])
-      (set! selected-item (if erase #f hover-item))
+      (set! selected-index (if erase #f hover-index))
       (when selection-callback
-        (selection-callback this (send this get-selected-item)))
+        (selection-callback this (get-selected-item)))
       (send this refresh))
 
     ;; update the vertical scrollbar range
@@ -187,7 +144,7 @@ and example usage.
       (let* ([pos (send this get-scroll-pos 'vertical)]
 
              ; number of items to display and visible height
-             [n (length display-items)]
+             [n (count-items)]
              [h (send this get-height)]
 
              ; scroll height of all items less a single screen
@@ -221,27 +178,27 @@ and example usage.
     ;; the left mouse button was clicked
     (define/private (click)
       (let ([now (current-inexact-milliseconds)])
-        (if (and (< (- now click-time) 200)
-                 (equal? hover-item selected-item))
+        (if (and (equal? hover-index selected-index)
+                 (< (- now click-time) 200))
             (when action-callback
-              (action-callback this (send this get-selected-item)))
-          (send this update-selection))
+              (action-callback this (get-selected-item)))
+            (update-selection))
         (set! click-time now)))
 
     ;; the right mouse button was clicked
     (define/private (r-click)
-      (unless (eq? hover-item selected-item)
-        (send this update-selection)
+      (unless (eq? hover-index selected-index)
+        (update-selection)
         (send this refresh-now))
       (when context-action-callback
-        (context-action-callback this (send this get-selected-item))))
+        (context-action-callback this (get-selected-item))))
 
     ;; update which story is being hovered over
-    (define/private (update-hover-item event)
+    (define/private (update-hover-index event)
       (let* ([y (send event get-y)]
              [i (exact-truncate (/ (+ y v-offset) item-height))])
-        (when (< i (length display-items))
-          (set! hover-item (item-uid (list-ref display-items i)))))
+        (when (< i (count-items))
+          (set! hover-index i)))
       (send this refresh))
 
     ;; default render of all items
@@ -251,19 +208,18 @@ and example usage.
           (send dc set-background item-color))
         (send dc clear)
 
-        ; loop over all the filtered and sorted items
-        (for ([i (in-naturals)]
-              [item display-items])
-          (let ([y (* i item-height)])
-            (when (and (> (+ y item-height) v-offset)
-                       (> (+ h v-offset) y))
-              (send dc set-origin 0 (- y v-offset))
+        ; calculate the visible items and y offset
+        (let-values ([(q r) (quotient/remainder v-offset item-height)])
+          (for ([i (range q (count-items))]
+                [y (range (- r) h item-height)])
+            (let ([item (get-item i)])
+              (send dc set-origin 0 y)
               (send dc set-clipping-rect 0 0 w item-height)
               
               ; determine the state of this item
               (let* ([state (cond
-                              ((eq? (item-uid item) selected-item) 'selected)
-                              ((eq? (item-uid item) hover-item) 'hover)
+                              ((eq? i selected-index) 'selected)
+                              ((eq? i hover-index) 'hover)
                               ((odd? i) 'alt)
                               (#t #f))]
                      
@@ -281,13 +237,25 @@ and example usage.
                   (send dc draw-rectangle 0 0 w item-height))
                 
                 ; draw the item
-                (let ([value (item-value item)])
-                  (if paint-item-callback
-                      (paint-item-callback this dc w item-height value state)
-                      (send dc draw-text (item-repr value) 1 1))))
+                (send this paint-item dc item state w item-height)))))
 
-              ; clear clipping
-              (send dc set-clipping-region #f))))))
+        ; clear clipping
+        (send dc set-clipping-region #f)))
 
-    ;; overwrite the items list with a new list of uid item pairs
+    ;; overwrite the items list with a new list of items
     (send this set-items items)))
+
+
+
+;; test list
+(define (test-canvas-list)
+  (let* ([frame (new frame%
+                     [label "List Canvas"]
+                     [width 260]
+                     [height 400])]
+         [canvas (new canvas-list%
+                      [parent frame]
+                      [items (range 1000)]
+                      [action-callback (λ (canvas item)
+                                         (displayln item))])])
+    (send frame show #t)))

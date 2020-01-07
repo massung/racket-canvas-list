@@ -1,7 +1,7 @@
 # Racket List Canvas
 
 This is a fast-rendering, single-selection, canvas control allowing
-custom drawing of a filtered, sorted list of items.
+custom drawing for a list of items.
 
 ## Example Usage
 
@@ -30,18 +30,10 @@ The `items` field initializes the control with the list of items that should be 
 
 The `item-height` is the size - in pixels - of each item. The origin of the device context will be translated by this amount for every item drawn. _In the future I'd like to make this item-dependent, but for now it's a fixed height for each item._
 
-These fields are available for filtering and sorting the items being rendered to the canvas:
-
-The `filter-function` is used to filter the list (e.g. `odd?`; default `#f`) and can be updated at any time with the `set-filter-function` method.
-
-The `sort-order` function is used to compare items for sorting (e.g. `<`; default `#f`). If the `sort-order` is `#f` then no sorting occurs and the items are displayed in the order they were added to the list. This can be updated at any time with the `set-sort-order` method.
-
-The `sort-key` what is passed to the `sort-order` function (e.g. `second`; default `#f`). If the `sort-key` is `#f` then the items are sorted as if the `sort-key` was the `identity` function. This can be updated at any time with the `set-sort-key` method.
-
 The following background colors are available for setting. They are set to some nice defaults, but can also be set to `#f` if you don't want item backgrounds automatically drawn for you (_note: the `background` color of the canvas is always used to clear the device context before each render_):
 
-* `item-color`
-* `alt-color` a `color%` used for every other item
+* `item-color` a `color%` used as the color for each item
+* `alt-color` a `color%` used as the color for every other item
 * `selection-color` a `color%` used for the selected item
 * `hover-color` a `color%` used for the item under the mouse
 
@@ -58,14 +50,27 @@ Each of the above callbacks take both the `canvas-list%` and the item itself as 
   (displayln (format "~a was selected" item)))
 ```
 
-The `paint-item-callback` function called whenever an item needs to be draw. By default, this is `#f` and indicates that the default draw function will be used, which simply draws the item as text.
+## Subclassing
 
-The `paint-item-callback` is passed the `canvas-list%`, the device context (`dc<%>`), the item to be drawn, and finally a state, which is either `'selected`, `'hover`, `alt` or `#f`.
+The default implementation of `canvas-list%` uses a vector to store all the items and renders a string representation of each item (using `~s`).
 
-Finally, there is also the `item-repr` field, which is a function that takes an item and returns the string representation of that item for rendering purposes. By default, this is defined as:
+If you'd like to provide your own, custom method of storing what should be rendered, you will need to override the following methods:
 
 ```racket
-(lambda (x) (format "~a" x))
+(define/override (set-items items)) -> ()
+(define/override (append-items items)) -> ()
+(define/override (count-items)) -> exact-nonnegative-integer?
+(define/override (get-item index)) -> any?
 ```
 
-This is only used by the default rendering function if `paint-item-callback` isn't used, although you can obviously use it yourself as well.
+If you'd like to provide your own, custom rendering of items, you only need to override the `paint-item` method:
+
+```racket
+(define/override (paint-item dc index state width height) ...) -> ()
+```
+
+* `item` is the item to paint
+* `state` is one of `'selected`, `'hover`, `alt` or `#f`
+* `width` and `height` are the bounds of the item itself
+
+The canvas is already transformed and clips to the bounds of the item. You can assume the correct background has been drawn and that `(0,0)` is the upper-left corner of the item and `(w,h)` is the lower-right extent.
