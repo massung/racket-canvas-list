@@ -132,15 +132,84 @@ and example usage.
     (define/override (on-char event)
       (let ([ds (exact-truncate item-height)])
         (case (send event get-key-code)
+          ('down (select-next))
+          ('up (select-prev))
+          ('next (select-next #:advance (visible-items)))
+          ('prior (select-prev #:advance (visible-items)))
+          ('home (select-first))
+          ('end (select-last))
+          ('escape (clear-selection))
+          ('clear (clear-selection))
           ('wheel-up (scroll-relative (- ds)))
-          ('wheel-down (scroll-relative (+ ds))))))
+          ('wheel-down (scroll-relative (+ ds)))
+          ((#\return) (open-selected-index)))))
 
-    ;; change the selected item to the one being hovered
-    (define/public (update-selection #:clear [erase #f])
-      (set! selected-index (if erase #f hover-index))
-      (when selection-callback
-        (selection-callback this (get-selected-item)))
+    ;; update the scroll position so the selection is visible
+    (define/public (scroll-to-selection)
+      (when selected-index
+        (let* ([pos (* selected-index item-height)]
+               [cur-pos (send this get-scroll-pos 'vertical)]
+               [h (send this get-height)]
+               [m (- (+ h cur-pos) item-height)]
+               [new-pos (cond
+                          [(<= cur-pos pos m) cur-pos]
+                          [(< pos cur-pos) pos]
+                          [else (+ (- pos h) item-height)])])
+          (send this set-scroll-pos 'vertical new-pos)
+          (send this on-scroll (new scroll-event% [position new-pos])))))
+
+    ;; the selected index should be acted on
+    (define/public (open-selected-index)
+      (when (and selected-index action-callback)
+        (action-callback this (get-selected-item))))
+
+    ;; change the selected item
+    (define/public (select-index #:index [index hover-index])
+      (set! selected-index index)
+      (when selected-index
+        (when selection-callback
+          (selection-callback this (get-selected-item)))
+        (scroll-to-selection))
       (send this refresh))
+
+    ;; clear the current selection
+    (define/public (clear-selection)
+      (select-index #:index #f))
+
+    ;; select the first item
+    (define/public (select-first)
+      (when (positive? (count-items))
+        (select-index #:index 0)))
+
+    ;; select the last item
+    (define/public (select-last)
+      (let ([n (count-items)])
+        (when (positive? n)
+          (select-index #:index (- n 1)))))
+
+    ;; select the next item
+    (define/public (select-next #:advance [n 1])
+      (if (not selected-index)
+          (select-first)
+          (let ([m (- (count-items) 1)])
+            (select-index #:index (max (min (+ selected-index n) m) 0)))))
+
+    ;; select the previous item
+    (define/public (select-prev #:advance [n 1])
+      (select-next #:advance (- n)))
+
+    ;; return the number of visible items
+    (define/private (visible-items)
+      (exact-truncate (/ (send this get-height) item-height)))
+
+    ;; return the first visible index
+    (define/private (first-visible)
+      (let-values ([(q r) (quotient/remainder v-offset item-height)])
+        (+ q (if (positive? r) 1 0))))
+
+    ;; return the last visible index
+    (define/private (last-visible)
+      (min (+ (first-visible) (visible-items)) (- (count-items) 1)))
 
     ;; update the vertical scrollbar range
     (define/private (update-scrollbar)
@@ -185,13 +254,13 @@ and example usage.
                  (< (- now click-time) 200))
             (when action-callback
               (action-callback this (get-selected-item)))
-            (update-selection))
+            (select-index))
         (set! click-time now)))
 
     ;; the right mouse button was clicked
     (define/private (r-click)
       (unless (eq? hover-index selected-index)
-        (update-selection)
+        (select-index)
         (send this refresh-now))
       (when context-action-callback
         (context-action-callback this (get-selected-item))))
