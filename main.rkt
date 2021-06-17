@@ -10,8 +10,8 @@ All rights reserved.
 
 --
 
-This is a fast-rendering, multi-selection, canvas control allowing
-custom drawing of a filtered, sorted list of items.
+This is a fast-rendering, single-selection, canvas control allowing
+custom drawing for a list of items.
 
 See https://github.com/massung/racket-canvas-list for documentation
 and example usage.
@@ -43,6 +43,8 @@ and example usage.
                 [hover-color (make-color #xbb #xdd #xff)]
 
                 ;; callbacks
+                [paint-item-callback #f]
+                [hint-callback #f]
                 [selection-callback #f]
                 [action-callback #f]
                 [context-action-callback #f])
@@ -72,10 +74,12 @@ and example usage.
 
     ;; draw a single item in the list
     (define/public (paint-item dc item state w h)
-      (send dc draw-text (~s item) 1 1))
+      (if paint-item-callback
+          (paint-item-callback this item state dc w h)
+          (send dc draw-text (~a item) 1 1)))
 
     ;; set the list of items
-    (define/public (set-items xs)
+    (define/public (set-items! xs)
       (set! items (for/vector ([x xs]) x))
 
       ; update scrolling and redraw
@@ -87,11 +91,23 @@ and example usage.
       (set! hover-index #f)
       (set! selected-index #f)
       (set! v-offset 0)
-      (set-items #()))
+      (set-items! #()))
 
     ;; append new items to the list
-    (define/public (append-items xs)
-      (set-items (vector-append items (for/vector ([x xs]) x))))
+    (define/public (append-items! xs)
+      (set-items! (vector-append items (for/vector ([x xs]) x))))
+
+    ;; replace an item at the provided - or selected - index
+    (define/public (set-item! x [index selected-index])
+      (when index
+        (vector-set! items index x)
+        (send this refresh)))
+
+    ;; insert an item before the provided - or selected - index
+    (define/public (insert-item! x [index selected-index])
+      (when index
+        (let-values ([(left right) (vector-split-at index)])
+          (set-items! (vector-append left (vector x) right)))))
 
     ;; return the currently hovered over item
     (define/public (get-hover-item)
@@ -315,19 +331,26 @@ and example usage.
         (send dc set-clipping-region #f)))
 
     ;; overwrite the items list with a new list of items
-    (send this set-items items)))
+    (send this set-items! items)))
 
 
 
 ;; test list
 (define (test-canvas-list)
-  (let* ([frame (new frame%
+  (let* ([fizzbuzz (λ (n)
+                     (match (list (remainder n 3)
+                                  (remainder n 5))
+                       [(list 0 0) "FizzBuzz"]
+                       [(list 0 _) "Fizz"]
+                       [(list _ 0) "Buzz"]
+                       [_          n]))]
+         [frame (new frame%
                      [label "List Canvas"]
                      [width 260]
                      [height 400])]
          [canvas (new canvas-list%
                       [parent frame]
-                      [items (range 1000)]
+                      [items (map fizzbuzz (range 1000))]
                       [action-callback (λ (canvas item)
                                          (displayln item))])])
     (send frame show #t)))
