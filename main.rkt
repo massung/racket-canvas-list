@@ -36,6 +36,9 @@ and example usage.
     (init-field [items #()]
                 [item-height 20]
 
+                ;; do not allow no selection
+                [force-selection #f]
+
                 ;; item colors
                 [item-color (make-color #xff #xff #xff)]
                 [alt-color (make-color #xf8 #xf8 #xf8)]
@@ -44,10 +47,12 @@ and example usage.
 
                 ;; callbacks
                 [paint-item-callback #f]
-                [hint-callback #f]
                 [selection-callback #f]
                 [action-callback #f]
                 [context-action-callback #f])
+
+    ;; index mapping
+    (define primary-key #())
 
     ;; the summed height of all display items
     (define display-height 0)
@@ -63,51 +68,81 @@ and example usage.
     ;; the last time a click event was received
     (define click-time 0)
 
+    ;; reset the primary key index
+    (define/public (reset-primary-key)
+      (set! primary-key (build-vector (vector-length items) identity)))
+
     ;; return the number of items in the list
     (define/public (count-items)
-      (vector-length items))
+      (vector-length primary-key))
 
     ;; return the item at the given index
     (define/public (get-item index)
-      (let ([n (- (vector-length items) 1)])
-        (and index (<= 0 index n) (vector-ref items index))))
-
-    ;; draw a single item in the list
-    (define/public (paint-item dc item state w h)
-      (if paint-item-callback
-          (paint-item-callback this item state dc w h)
-          (send dc draw-text (~a item) 1 1)))
+      (let ([n (- (vector-length primary-key) 1)])
+        (and index (<= 0 index n) (vector-ref items (vector-ref primary-key index)))))
 
     ;; set the list of items
-    (define/public (set-items! xs)
+    (define/public (set-items xs)
       (set! items (for/vector ([x xs]) x))
+      (reset-primary-key)
 
       ; update scrolling and redraw
+      (send this set-scroll-pos 'vertical 0)
       (update-scrollbar)
+      (if (and force-selection selected-index)
+          (select-first)
+          (clear-selection))
       (send this refresh))
+
+    ;; sort the items
+    (define/public (sort-items less-than? #:key [key #f])
+      (let ([sel (and selected-index (vector-ref primary-key selected-index))])
+        (vector-sort! primary-key
+                      less-than?
+                      #:cache-keys? #t
+                      #:key (λ (i)
+                              (let ([item (vector-ref items i)])
+                                (if key (key item) item))))
+        (select-index (vector-member sel primary-key))))
+
+    ;; filter items
+    (define/public (filter-items pred #:key [key #f])
+      (let ([sel (and selected-index (vector-ref primary-key selected-index))])
+        (when key
+          (set! pred (λ (item) (pred (key item)))))
+        (set! primary-key (vector-filter (λ (i) (pred (vector-ref items i))) primary-key))
+        (select-index (vector-member sel primary-key))
+        (update-scrollbar)))
 
     ;; clear the list of items
     (define/public (clear)
       (set! hover-index #f)
       (set! selected-index #f)
       (set! v-offset 0)
-      (set-items! #()))
-
-    ;; append new items to the list
-    (define/public (append-items! xs)
-      (set-items! (vector-append items (for/vector ([x xs]) x))))
+      (set-items #()))
 
     ;; replace an item at the provided - or selected - index
-    (define/public (set-item! x [index selected-index])
+    (define/public (set-item x [index selected-index])
       (when index
-        (vector-set! items index x)
+        (vector-set! items (vector-ref primary-key index) x)
         (send this refresh)))
 
     ;; insert an item before the provided - or selected - index
-    (define/public (insert-item! x [index selected-index])
-      (when index
-        (let-values ([(left right) (vector-split-at index)])
-          (set-items! (vector-append left (vector x) right)))))
+    (define/public (insert-items xs [index #f])
+      (set-items (if index
+                     (let-values ([(left right) (vector-split-at items index)])
+                       (vector-append left (for/vector ([x xs]) x) right))
+                     (vector-append (for/vector ([x xs]) x) items))))
+
+    ;; append new items to the list
+    (define/public (append-items xs [index #f])
+      (if index
+          (insert-items xs (+ index 1))
+          (set-items (vector-append items (for/vector ([x xs]) x)))))
+
+    ;; return the currently hovered and selected item indices
+    (define/public (get-hover-index) hover-index)
+    (define/public (get-selected-index) selected-index)
 
     ;; return the currently hovered over item
     (define/public (get-hover-item)
@@ -118,7 +153,7 @@ and example usage.
       (get-item selected-index))
 
     ;; execute a callback with the selected item
-    (define/public (apply-to-selected-item f)
+    (define/public (call-with-selected-item f)
       (let ([item (get-selected-item)])
         (when item
           (f item))))
@@ -140,25 +175,27 @@ and example usage.
     ;; handle mouse events
     (define/override (on-event event)
       (case (send event get-event-type)
-        ('left-down (click))
-        ('right-down (r-click))
-        ('motion (update-hover-index event))))
+        ('left-down (click event))
+        ('right-down (r-click event))
+        ('motion (update-hover-index event))
+        ('leave (update-hover-index #f))))
 
     ;; handle key events
     (define/override (on-char event)
       (let ([ds (exact-truncate item-height)])
         (case (send event get-key-code)
           ('down (select-next))
-          ('up (select-prev))
+          ('up (select-previous))
           ('next (select-next #:advance (visible-items)))
-          ('prior (select-prev #:advance (visible-items)))
+          ('prior (select-previous #:advance (visible-items)))
           ('home (select-first))
           ('end (select-last))
           ('escape (clear-selection))
           ('clear (clear-selection))
           ('wheel-up (scroll-relative (- ds)))
           ('wheel-down (scroll-relative (+ ds)))
-          ((#\return) (open-selected-index)))))
+          ((#\space) (scroll-to-selection))
+          ((#\return) (open-selected-item)))))
 
     ;; update the scroll position so the selection is visible
     (define/public (scroll-to-selection)
@@ -175,43 +212,45 @@ and example usage.
           (send this on-scroll (new scroll-event% [position new-pos])))))
 
     ;; the selected index should be acted on
-    (define/public (open-selected-index)
+    (define/public (open-selected-item)
       (when (and selected-index action-callback)
-        (action-callback this (get-selected-item))))
+        (action-callback this (get-selected-item) #f)))
 
     ;; change the selected item
-    (define/public (select-index #:index [index hover-index])
-      (set! selected-index index)
-      (when selected-index
-        (when selection-callback
-          (selection-callback this (get-selected-item)))
-        (scroll-to-selection))
-      (send this refresh))
+    (define/public (select-index [index hover-index])
+      (unless (and force-selection (not index))
+        (set! selected-index index)
+        (when selected-index
+          (when selection-callback
+            (selection-callback this (get-selected-item) #f))
+          (scroll-to-selection))
+        (send this refresh)))
 
     ;; clear the current selection
     (define/public (clear-selection)
-      (select-index #:index #f))
+      (unless (and force-selection (positive? (count-items)))
+        (select-index #f)))
 
     ;; select the first item
     (define/public (select-first)
       (when (positive? (count-items))
-        (select-index #:index 0)))
+        (select-index 0)))
 
     ;; select the last item
     (define/public (select-last)
       (let ([n (count-items)])
         (when (positive? n)
-          (select-index #:index (- n 1)))))
+          (select-index (- n 1)))))
 
     ;; select the next item
     (define/public (select-next #:advance [n 1])
       (if (not selected-index)
           (select-first)
           (let ([m (- (count-items) 1)])
-            (select-index #:index (max (min (+ selected-index n) m) 0)))))
+            (select-index (max (min (+ selected-index n) m) 0)))))
 
     ;; select the previous item
-    (define/public (select-prev #:advance [n 1])
+    (define/public (select-previous #:advance [n 1])
       (select-next #:advance (- n)))
 
     ;; return the number of visible items
@@ -252,42 +291,50 @@ and example usage.
             (send this on-scroll (new scroll-event% [position new-pos]))))))
 
     ;; move the scrollbar to an absolute position
-    (define/public (scroll-to pos)
+    (define/private (scroll-to pos)
       (let ([h (send this get-scroll-range 'vertical)])
         (set! v-offset (min (max pos 0) h))
         (send this set-scroll-pos 'vertical v-offset)
         (send this refresh-now)))
 
     ;; move the scrollbar relative to its current position
-    (define/public (scroll-relative dpos)
+    (define/private (scroll-relative dpos)
       (let ([pos (send this get-scroll-pos 'vertical)])
-        (send this scroll-to (+ pos dpos))))
+        (scroll-to (+ pos dpos))))
     
     ;; the left mouse button was clicked
-    (define/private (click)
+    (define/private (click event)
       (let ([now (current-inexact-milliseconds)])
         (if (and (equal? hover-index selected-index)
                  (< (- now click-time) 200))
             (when action-callback
-              (action-callback this (get-selected-item)))
+              (action-callback this (get-selected-item) event))
             (select-index))
         (set! click-time now)))
 
     ;; the right mouse button was clicked
-    (define/private (r-click)
+    (define/private (r-click event)
       (unless (eq? hover-index selected-index)
         (select-index)
         (send this refresh-now))
       (when context-action-callback
-        (context-action-callback this (get-selected-item))))
+        (context-action-callback this (get-selected-item) event)))
 
     ;; update which story is being hovered over
     (define/private (update-hover-index event)
-      (let* ([y (send event get-y)]
-             [i (exact-truncate (/ (+ y v-offset) item-height))])
-        (when (< i (count-items))
-          (set! hover-index i)))
+      (if event
+          (let* ([y (send event get-y)]
+                 [i (exact-truncate (/ (+ y v-offset) item-height))])
+            (when (< i (count-items))
+              (set! hover-index i)))
+          (set! hover-index #f))
       (send this refresh))
+
+    ;; draw a single item in the list
+    (define/private (paint-item dc item state w h)
+      (if paint-item-callback
+          (paint-item-callback this item state dc w h)
+          (send dc draw-text (~a item) 1 1)))
 
     ;; default render of all items
     (define/private (paint dc)
@@ -325,32 +372,26 @@ and example usage.
                   (send dc draw-rectangle 0 0 w item-height))
                 
                 ; draw the item
-                (send this paint-item dc item state w item-height)))))
+                (paint-item dc item state w item-height)))))
 
         ; clear clipping
         (send dc set-clipping-region #f)))
 
     ;; overwrite the items list with a new list of items
-    (send this set-items! items)))
+    (send this set-items items)))
 
 
 
 ;; test list
 (define (test-canvas-list)
-  (let* ([fizzbuzz (λ (n)
-                     (match (list (remainder n 3)
-                                  (remainder n 5))
-                       [(list 0 0) "FizzBuzz"]
-                       [(list 0 _) "Fizz"]
-                       [(list _ 0) "Buzz"]
-                       [_          n]))]
-         [frame (new frame%
+  (let* ([frame (new frame%
                      [label "List Canvas"]
                      [width 260]
                      [height 400])]
          [canvas (new canvas-list%
                       [parent frame]
-                      [items (map fizzbuzz (range 1000))]
-                      [action-callback (λ (canvas item)
-                                         (displayln item))])])
+                      [items (range 1000)]
+                      [context-action-callback (λ (canvas item event) (println item))]
+                      [action-callback (λ (canvas item event)
+                                         (send canvas sort-items >))])])
     (send frame show #t)))
