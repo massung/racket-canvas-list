@@ -298,13 +298,11 @@ and example usage.
         (send this refresh-now)))
 
     ;; move the scrollbar relative to its current position
-    (define scroll-positions null)
+    (define scroll-position-delta 0)
     (define scroll-flush-delay-ms 8) ;; 120FPS
     (define scroll-flush-scheduled? #f)
-    (define/private (flush-scroll-position positions)
-      (collect-garbage 'incremental)
+    (define/private (flush-scroll-position dpos)
       (define pos (send this get-scroll-pos 'vertical))
-      (define dpos (apply + positions))
       (scroll-to (+ pos dpos)))
 
     ;; Scrolling is a relatively expensive operation and on platforms
@@ -314,7 +312,7 @@ and example usage.
     ;; scrolling in one direction then changes direction mid scroll.
     (define/private (scroll-relative dpos)
       (define deadline-evt (alarm-evt (+ (current-inexact-milliseconds) scroll-flush-delay-ms)))
-      (set! scroll-positions (cons dpos scroll-positions))
+      (set! scroll-position-delta (+ dpos scroll-position-delta))
       (unless scroll-flush-scheduled?
         (set! scroll-flush-scheduled? #t)
         (thread
@@ -323,8 +321,8 @@ and example usage.
            (queue-callback (lambda ()
                              (set! scroll-flush-scheduled? #f)
                              (flush-scroll-position
-                              (begin0 (reverse scroll-positions)
-                                (set! scroll-positions null)))))))))
+                              (begin0 scroll-position-delta
+                                (set! scroll-position-delta 0)))))))))
 
     ;; the left mouse button was clicked
     (define/private (click event)
