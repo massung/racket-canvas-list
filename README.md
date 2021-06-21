@@ -1,4 +1,4 @@
-# Racket List Canvas
+# Racket Canvas List
 
 This is a fast-rendering, single-selection, canvas control allowing custom drawing for a list of items. It can handle extremely large lists as it only renders what's visible on the screen. Additionally, it supports:
 

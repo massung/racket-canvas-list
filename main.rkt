@@ -5,7 +5,7 @@
 
 Racket Canvas List
 
-Copyright (c) 2019 by Jeffrey Massung
+Copyright (c) 2021 by Jeffrey Massung
 All rights reserved.
 
 --
@@ -299,11 +299,12 @@ and example usage.
 
     ;; move the scrollbar relative to its current position
     (define scroll-position-delta 0)
-    (define scroll-flush-delay-ms 8) ;; 120FPS
+    (define scroll-flush-delay-ms 8) ;; 120 fps
     (define scroll-flush-scheduled? #f)
+
+    ;; sent while scrolling to update the scroll position
     (define/private (flush-scroll-position dpos)
-      (define pos (send this get-scroll-pos 'vertical))
-      (scroll-to (+ pos dpos)))
+      (scroll-to (+ (send this get-scroll-pos 'vertical) dpos)))
 
     ;; Scrolling is a relatively expensive operation and on platforms
     ;; that generate a lot of scroll wheel events (like when using a
@@ -315,14 +316,13 @@ and example usage.
       (set! scroll-position-delta (+ dpos scroll-position-delta))
       (unless scroll-flush-scheduled?
         (set! scroll-flush-scheduled? #t)
-        (thread
-         (lambda ()
-           (sync deadline-evt)
-           (queue-callback (lambda ()
-                             (set! scroll-flush-scheduled? #f)
-                             (flush-scroll-position
-                              (begin0 scroll-position-delta
-                                (set! scroll-position-delta 0)))))))))
+        (thread (λ ()
+                  (sync deadline-evt)
+                  (queue-callback (λ ()
+                                    (set! scroll-flush-scheduled? #f)
+                                    (flush-scroll-position
+                                     (begin0 scroll-position-delta
+                                             (set! scroll-position-delta 0)))))))))
 
     ;; the left mouse button was clicked
     (define/private (click event)
