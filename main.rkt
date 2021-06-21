@@ -298,10 +298,34 @@ and example usage.
         (send this refresh-now)))
 
     ;; move the scrollbar relative to its current position
+    (define scroll-positions null)
+    (define scroll-flush-delay-ms 8) ;; 120FPS
+    (define scroll-flush-scheduled? #f)
+    (define/private (flush-scroll-position positions)
+      (collect-garbage 'incremental)
+      (define pos (send this get-scroll-pos 'vertical))
+      (define dpos (apply + positions))
+      (scroll-to (+ pos dpos)))
+
+    ;; Scrolling is a relatively expensive operation and on platforms
+    ;; that generate a lot of scroll wheel events (like when using a
+    ;; trackpad on macOS), we need some form of "frame skipping" in
+    ;; order to correctly handle situtations where the user starts
+    ;; scrolling in one direction then changes direction mid scroll.
     (define/private (scroll-relative dpos)
-      (let ([pos (send this get-scroll-pos 'vertical)])
-        (scroll-to (+ pos dpos))))
-    
+      (define deadline-evt (alarm-evt (+ (current-inexact-milliseconds) scroll-flush-delay-ms)))
+      (set! scroll-positions (cons dpos scroll-positions))
+      (unless scroll-flush-scheduled?
+        (set! scroll-flush-scheduled? #t)
+        (thread
+         (lambda ()
+           (sync deadline-evt)
+           (queue-callback (lambda ()
+                             (set! scroll-flush-scheduled? #f)
+                             (flush-scroll-position
+                              (begin0 (reverse scroll-positions)
+                                (set! scroll-positions null)))))))))
+
     ;; the left mouse button was clicked
     (define/private (click event)
       (let ([now (current-inexact-milliseconds)])
