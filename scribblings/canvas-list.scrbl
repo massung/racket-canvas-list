@@ -41,16 +41,43 @@ A canvas-list is a fast-rendering, single-selection, list control, which allows 
  A @racket[canvas-list%] is similar in nature to a @racket[list-box%], but instead derives from @racket[canvas%]. This allows for extremely fast, custom rendering of very large lists. It supports single selection, keyboard and mouse navigation, context menus, mouse hovering, alternate row colors, primary key indexing, sorting, filtering, and more.
 
  @defconstructor[([items sequence? #()]
-                  [item-height non-negative-exact-integer? 20]
-                  [item-color (or/c (is-a/c? color%) #f) #f]
-                  [alt-color (or/c (is-a/c? color%) #f) #f]
-                  [selection-color (or/c (is-a/c? color%) #f) #f]
-                  [hover-color (or/c (is-a/c? color%) #f) #f]
+                  [item-height exact-nonnegative-integer? 20]
+                  [item-color (or/c (is-a?/c color%) #f) #f]
+                  [alt-color (or/c (is-a?/c color%) #f) #f]
+                  [selection-color (or/c (is-a?/c color%) #f) #f]
+                  [hover-color (or/c (is-a?/c color%) #f) #f]
                   [force-selection boolean? #f]
-                  [paint-item-callback (or/c ((is-a/c? canvas-list%) any/c (or/c 'selected 'hover 'alt #f) (is-a/c? dc<%>) non-negative-exact-integer? non-negative-exact-integer? -> any/c) #f) #f]
-                  [selection-callback (or/c ((is-a/c? canvas-list%) any/c (or/c (is-a? mouse-event%) #f) -> any/c) #f) #f]
-                  [action-callback (or/c ((is-a/c? canvas-list%) any/c (or/c (is-a? mouse-event%) #f) -> any/c) #f) #f]
-                  [context-action-callback (or/c ((is-a/c? canvas-list%) any/c (or/c (is-a? mouse-event%) #f) -> any/c) #f) #f])]{
+                  [paint-item-callback (or/c ((is-a?/c canvas-list%)
+                                              any/c
+                                              (or/c 'selected 'hover 'alt #f)
+                                              (is-a?/c dc<%>)
+                                              exact-nonnegative-integer?
+                                              exact-nonnegative-integer?
+                                              ->
+                                              any/c)
+                                             #f)
+                                       #f]
+                  [selection-callback (or/c ((is-a?/c canvas-list%)
+                                             any/c
+                                             (or/c (is-a?/c mouse-event%) #f)
+                                             ->
+                                             any/c)
+                                            #f)
+                                      #f]
+                  [action-callback (or/c ((is-a?/c canvas-list%)
+                                          any/c
+                                          (or/c (is-a?/c mouse-event%) #f)
+                                          ->
+                                          any/c)
+                                         #f)
+                                   #f]
+                  [context-action-callback (or/c ((is-a?/c canvas-list%)
+                                                  any/c
+                                                  (or/c (is-a?/c mouse-event%) #f)
+                                                  ->
+                                                  any/c)
+                                                 #f)
+                                           #f])]{
   Creates a new @racket[canvas-list%] with an initial set of items.
 
   The @racket[items] are the initial sequence of items that should be displayed.
@@ -70,7 +97,7 @@ A canvas-list is a fast-rendering, single-selection, list control, which allows 
   The @racket[context-action-callback] is called when the user right-clicks an item. Typically this is used to bring up a @racket[popup-menu%]. It is passed the same arguments as the @racket[selection-callback].
  }
                                                                                                                                  
- @defmethod[(count-items) non-negative-exact-integer?]{
+ @defmethod[(count-items) exact-nonnegative-integer?]{
  Returns the number of items in the primary key. This may be less than the number of items in the list if there is a filter applied.
  }
 
@@ -88,7 +115,7 @@ A canvas-list is a fast-rendering, single-selection, list control, which allows 
  Removes any applied sorting or filters to the list.
  }
 
- @defmethod[(get-item [index non-negative-exact-integer?]) any/c]{
+ @defmethod[(get-item [index exact-nonnegative-integer?]) any/c]{
  Returns the item at the given index or @racket[#f] if the index is out of range.
  }
 
@@ -96,15 +123,15 @@ A canvas-list is a fast-rendering, single-selection, list control, which allows 
  Clears the current set of items being displayed and replaces it with a new set.
  }
 
- @defmethod[(insert-items [items sequence?] [index (or/c non-negative-exact-integer? #f) #f]) void?]{
+ @defmethod[(insert-items [items sequence?] [index (or/c exact-nonnegative-integer? #f) #f]) void?]{
  Inserts items into the list at the given index. If no index is provided it is inserted before the currently selected index. If there is no selection it is inserted at the beginning.
  }
 
- @defmethod[(append-items [items sequence?] [index (or/c non-negative-exact-integer? #f) #f]) void?]{
+ @defmethod[(append-items [items sequence?] [index (or/c exact-nonnegative-integer? #f) #f]) void?]{
  Appends items onto the list at the given index. If no index is provided it is added after the currently selected index. If there is no selection it is inserted at the beginning.
  }
 
- @defmethod[(get-selected-index) (or/c non-negative-exact-integer? #f)]{
+ @defmethod[(get-selected-index) (or/c exact-nonnegative-integer? #f)]{
  Returns the index of the currently selected item or @racket[#f] if there is no selection.
  }
 
@@ -112,7 +139,7 @@ A canvas-list is a fast-rendering, single-selection, list control, which allows 
  Returns the currently selected item or @racket[#f] if there is no selection.
  }
 
- @defmethod[(get-hover-index) (or/c non-negative-exact-integer? #f)]{
+ @defmethod[(get-hover-index) (or/c exact-nonnegative-integer? #f)]{
  Returns the index of the currently hovered item or @racket[#f] if there is no item being hovered over.
  }
 
@@ -128,7 +155,7 @@ A canvas-list is a fast-rendering, single-selection, list control, which allows 
  If an @racket[action-callback] was set and there is a selected item, apply the callback.
  }
 
- @defmethod[(select-index [index (or/c non-negative-exact-integer? #f) hover-index]) void?]{
+ @defmethod[(select-index [index (or/c exact-nonnegative-integer? #f) hover-index]) void?]{
  Changes the current selection to the index. If not provided, the index of the currently hovered over item is used. If @racket[#f], then the current selection is cleared.
  }
 
@@ -144,11 +171,11 @@ A canvas-list is a fast-rendering, single-selection, list control, which allows 
  Selects the last item in the list.
  }
 
- @defmethod[(select-next [#:advance n non-negative-exact-integer? 1]) void?]{
+ @defmethod[(select-next [#:advance n exact-nonnegative-integer? 1]) void?]{
  Moves to the next item in the list after the current selection. The @racket[advance] parameter is useful when wanting to skip items (e.g. when using page-up/page-down).
  }
 
- @defmethod[(select-previous [#:advance n non-negative-exact-integer? 1]) void?]{
+ @defmethod[(select-previous [#:advance n exact-nonnegative-integer? 1]) void?]{
  Moves to the previous item in the list before the current selection. The @racket[advance] parameter is useful when wanting to skip items (e.g. when using page-up/page-down).
  }
 
